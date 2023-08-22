@@ -29,10 +29,6 @@ class MyService :Service() {
     val handler: Handler = Handler()
     lateinit var runnable: Runnable
     lateinit var file: File
-    private var previousRxBytes: Long = 0
-    private var previousTxBytes: Long = 0
-    val initialRxBytes = TrafficStats.getTotalRxBytes()
-    val initialTxBytes = TrafficStats.getTotalTxBytes()
 
     fun getVoltage(context: Context): Int {
         val intent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
@@ -58,49 +54,20 @@ class MyService :Service() {
                 //wattage in mW
                 var currentInAmperes = (currentNow * 0.001)
                 var wattage = voltage * currentInAmperes
-                //RTD in ms
-                var rtd = getRoundTripDelay()
-                //Bandwidth available in kbps
-                //var bandAval = getAvailableBandwidth(this@MyService)
-                //Bandwidth utilization in %
-                var bandUtil = getBandwidthUtilization()
-
-                val currentRxBytes = TrafficStats.getTotalRxBytes()
-                val currentTxBytes = TrafficStats.getTotalTxBytes()
-
-
-                val downloadSpeed = ((currentRxBytes - previousRxBytes) * 8) / 1000.0 // kbps
-                val uploadSpeed = ((currentTxBytes - previousTxBytes) * 8) /  1000.0 // kbps
-
-                previousRxBytes = currentRxBytes
-                previousTxBytes = currentTxBytes
 
 
                 //printable metrics
                 var myCurrent = currentNow.toString()
                 var myVoltage = voltage.toString()
                 var myWattage= wattage.toString()
-                var myDownloadSpeed = downloadSpeed.toString()
-                var myUploadSpeed = uploadSpeed.toString()
-                var myTotalRxBytes = (currentRxBytes-initialRxBytes).toString()
-                var myTotalTxBytes = (currentTxBytes-initialTxBytes).toString()
-                var myRtd = rtd.toString()
-               // var myBandAval = bandAval.toString()
-                var myBandUtil = bandUtil.toString()
 
 
-                Log.d("METRICS1", myDownloadSpeed+" mbpsDown")
-                Log.d("METRICS2", myUploadSpeed+" mbpsUp")
-                Log.d("METRICS3", myTotalRxBytes+" bytesDown")
-                Log.d("METRICS4", myTotalTxBytes+" bytesUp")
-                Log.d("METRICS5", myRtd+" RTD ms")
-                Log.d("METRICS6", myBandUtil+" % util")
 
 
                 val now = Calendar.getInstance()
                 val time = now[Calendar.HOUR_OF_DAY].toString()+ ":"+ now[Calendar.MINUTE].toString()+ ":"+now[Calendar.SECOND]
 
-                var metricsString = time+","+myCurrent+","+myVoltage+","+myWattage+","+myDownloadSpeed+","+myUploadSpeed+","+myTotalRxBytes+","+myTotalTxBytes+","+myRtd+","+myBandUtil+"\r\n"
+                var metricsString = time+","+myCurrent+","+myVoltage+","+myWattage+"\r\n"
 
                 try {
                     synchronized(DATA_LOCK) {
@@ -136,7 +103,7 @@ class MyService :Service() {
         file = File(sdcardPath+"/Metrics/"+currentDateAndTime+".txt")
         file.createNewFile()
 
-        var metricsNames = "Time,BatteryCurrent_Now(mA),Battery_Voltage(mV),Wattage(mW),DownloadSpeed(kbps),UploadSpeed(kbps),Total_downloaded_bytes,Total_uploaded_bytes,Rtd(ms),Bandwidth_Utilization(%)\r\n"
+        var metricsNames = "Time,BatteryCurrent_Now(mA),Battery_Voltage(mV),Wattage(mW)\r\n"
         try {
             synchronized(DATA_LOCK) {
                 if (file != null && file.canWrite()) {
@@ -163,84 +130,6 @@ class MyService :Service() {
     private var notification: Notification? = null
     var mNotificationManager: NotificationManager? = null
     private val mNotificationId = 123
-
-    fun getRoundTripDelay(): Long {
-        val hostname = "http://192.168.50.62:5000/" // Replace with the remote server you want to ping
-        val timeout = 5000 // Timeout in milliseconds
-
-        try {
-            val inetAddress = InetAddress.getByName(hostname)
-            val startTime = System.currentTimeMillis()
-            if (inetAddress.isReachable(timeout)) {
-                val endTime = System.currentTimeMillis()
-                return endTime - startTime
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        return -1 // Return -1 if there was an error or the host is unreachable
-    }
-
-    /**
-    @RequiresApi(Build.VERSION_CODES.M)
-    fun getAvailableBandwidth(context: Context): Long {
-        val url = "http://192.168.50.231:5000/" // Replace with the URL of a file to download
-        val bufferSize = 4096
-        val maxDuration = 5000 // Maximum duration for the download in milliseconds
-
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivityManager.activeNetwork
-        val networkCapabilities = connectivityManager.getNetworkCapabilities(network)
-
-        if (networkCapabilities != null && networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
-            val startTime = System.currentTimeMillis()
-
-            val connection = URL(url).openConnection()
-            connection.connectTimeout = maxDuration
-            connection.readTimeout = maxDuration
-
-            val inputStream: InputStream = BufferedInputStream(connection.getInputStream())
-            val buffer = ByteArray(bufferSize)
-            var bytesRead = 0
-            var totalBytesRead = 0L
-
-            while (System.currentTimeMillis() - startTime < maxDuration && inputStream.read(buffer).also { bytesRead = it } != -1) {
-                totalBytesRead += bytesRead
-            }
-
-            inputStream.close()
-
-            val endTime = System.currentTimeMillis()
-            val duration = endTime - startTime
-            return totalBytesRead * 8 / duration * 1000 / 1000 // Convert to bits per second
-        }
-
-        return -1 // Return -1 if the network is not available or doesn't have internet capability
-    }
-    */
-
-    fun getBandwidthUtilization(): Double {
-        val totalRxBytes = TrafficStats.getTotalRxBytes()
-        val totalTxBytes = TrafficStats.getTotalTxBytes()
-        val totalBytes = totalRxBytes + totalTxBytes
-
-        val totalRxBytesPerSecond = TrafficStats.getUidRxBytes(android.os.Process.myUid()) / 1000 // Convert to kilobytes
-        val totalTxBytesPerSecond = TrafficStats.getUidTxBytes(android.os.Process.myUid()) / 1000 // Convert to kilobytes
-        val totalBytesPerSecond = totalRxBytesPerSecond + totalTxBytesPerSecond
-
-        return if (totalBytes > 0) totalBytesPerSecond.toDouble() / totalBytes * 100 else 0.0
-    }
-
-
-
-
-
-
-
-
-
-
 
 
 
